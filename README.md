@@ -1,184 +1,164 @@
-# -3
-class TreeNode:
-    """二叉树节点类，采用左孩子右兄弟表示法"""
-    def __init__(self, name: str, is_dir: bool = True, size: int = 0):
-        self.name = name      # 节点名称
-        self.is_dir = is_dir  # 是否为目录（默认True）
-        self.size = size      # 文件大小（目录初始为0）
-        self.left = None     # 左子节点（第一个子目录/文件）
-        self.right = None    # 右兄弟节点
+#include <iostream>
+#include <string>
+#include <unordered_map>
+#include <vector>
+using namespace std;
 
-class FileSystem:
-    """文件系统管理类"""
-    def __init__(self):
-        self.root = TreeNode("root", is_dir=True)  # 根目录
-    
-    def _find_node(self, path: str) -> TreeNode:
-        """根据路径查找节点，返回最后一个节点和父节点"""
-        if path == "/":
-            return self.root
-        parts = [p for p in path.split("/") if p]
-        current = self.root
-        parent = None
-        
-        for part in parts:
-            found = False
-            child = current.left  # 第一个子节点
-            while child:
-                if child.name == part:
-                    parent = current
-                    current = child
-                    found = True
-                    break
-                child = child.right
-            if not found:
-                raise FileNotFoundError(f"路径不存在: {path}")
-        return current
+// 树节点结构体
+struct TreeNode {
+    string name;
+    bool isFile;    // true=文件，false=目录
+    int size;       // 文件大小（目录为0）
+    TreeNode* left;  // 第一个子节点（子目录/文件）
+    TreeNode* right; // 兄弟节点
+    TreeNode(string n, bool f, int s = 0) : name(n), isFile(f), size(s), left(nullptr), right(nullptr) {}
+};
 
-    def create(self, path: str, is_dir: bool = True, size: int = 0):
-        """创建目录/文件"""
-        if path == "/":
-            raise ValueError("根目录已存在")
-        
-        parts = [p for p in path.split("/") if p]
-        parent_path = "/" + "/".join(parts[:-1])
-        name = parts[-1]
-        
-        try:
-            parent_node = self._find_node(parent_path)
-        except FileNotFoundError:
-            raise FileNotFoundError(f"父路径不存在: {parent_path}")
-        
-        # 检查是否已存在同名节点
-        child = parent_node.left
-        while child:
-            if child.name == name:
-                raise FileExistsError(f"名称已存在: {name}")
-            child = child.right
-        
-        # 创建新节点并插入到左孩子的最右侧兄弟
-        new_node = TreeNode(name, is_dir, size)
-        if parent_node.left is None:
-            parent_node.left = new_node
-        else:
-            current = parent_node.left
-            while current.right:
-                current = current.right
-            current.right = new_node
+class FileSystem {
+private:
+    TreeNode* root; // 根目录
+    unordered_map<string, vector<TreeNode*>> cache; // 缓存文件分类结果
 
-    def delete(self, path: str):
-        """删除目录/文件（递归删除子树）"""
-        node = self._find_node(path)
-        parent = self._find_node("/".join(path.split("/")[:-1]))
-        
-        # 在父节点的子链表中移除当前节点
-        prev = None
-        current = parent.left
-        while current:
-            if current == node:
-                if prev:
-                    prev.right = current.right
-                else:
-                    parent.left = current.right
-                break
-            prev = current
-            current = current.right
-        
-        # 递归释放内存（Python自动GC，此处模拟操作）
-        def _delete_recursive(node: TreeNode):
-            if node.left:
-                _delete_recursive(node.left)
-            if node.right:
-                _delete_recursive(node.right)
-            node.left = node.right = None
-        
-        _delete_recursive(node)
+public:
+    FileSystem() {
+        root = new TreeNode("Root", false);
+    }
 
-    def rename(self, path: str, new_name: str):
-        """重命名节点"""
-        node = self._find_node(path)
-        node.name = new_name
+    //--- 核心功能：增删改 ---//
+    // 创建文件/目录
+    TreeNode* createNode(const string& name, bool isFile, int size = 0) {
+        return new TreeNode(name, isFile, size);
+    }
 
-    def list_files_by_type(self, file_type: str) -> list:
-        """中序遍历按文件类型分类"""
-        result = []
-        
-        def _in_order(node: TreeNode):
-            if node:
-                _in_order(node.left)
-                if not node.is_dir and node.name.endswith(file_type):
-                    result.append(node.name)
-                _in_order(node.right)
-        
-        _in_order(self.root)
-        return result
-
-    def calculate_size(self, path: str = "/") -> int:
-        """后序遍历计算目录大小"""
-        node = self._find_node(path)
-        
-        def _post_order(node: TreeNode) -> int:
-            if not node:
-                return 0
-            left_size = _post_order(node.left)
-            right_size = _post_order(node.right)
-            if node.is_dir:
-                node.size = left_size + right_size
-            return node.size + (0 if node.is_dir else node.size)
-        
-        return _post_order(node)
-
-    def visualize(self, node: TreeNode = None, prefix: str = "", is_last: bool = True):
-        """可视化目录结构（文本树形输出）"""
-        if node is None:
-            node = self.root
-        
-        connectors = {
-            "space": "    ",
-            "branch": "├── ",
-            "last_branch": "└── ",
-            "vertical": "│   "
+    // 插入节点（目录或文件）
+    bool insertNode(TreeNode* parent, TreeNode* newNode) {
+        if (!parent || parent->isFile) {
+            cerr << "错误：父节点不是目录！" << endl;
+            return false;
         }
-        
-        current_prefix = connectors["last_branch"] if is_last else connectors["branch"]
-        print(prefix + current_prefix + node.name + 
-              f" ({'dir' if node.is_dir else 'file'}, {node.size}KB)")
-        
-        if node.is_dir:
-            children = []
-            child = node.left
-            while child:
-                children.append(child)
-                child = child.right
-            
-            for i, child in enumerate(children):
-                new_prefix = prefix + ("    " if is_last else connectors["vertical"])
-                self.visualize(child, new_prefix, i == len(children)-1)
+        // 检查同名节点
+        TreeNode* sibling = parent->left;
+        while (sibling) {
+            if (sibling->name == newNode->name) {
+                cerr << "错误：名称 '" << newNode->name << "' 已存在！" << endl;
+                return false;
+            }
+            sibling = sibling->right;
+        }
+        // 插入到子节点链表末尾
+        if (!parent->left) {
+            parent->left = newNode;
+        } else {
+            sibling = parent->left;
+            while (sibling->right) {
+                sibling = sibling->right;
+            }
+            sibling->right = newNode;
+        }
+        return true;
+    }
 
-# ---------------------- 测试用例 ----------------------
-if __name__ == "__main__":
-    fs = FileSystem()
-    
-    # 创建目录结构
-    fs.create("/Documents", is_dir=True)
-    fs.create("/Downloads", is_dir=True)
-    fs.create("/Documents/report.txt", is_dir=False, size=50)
-    fs.create("/Documents/image.jpg", is_dir=False, size=70)
-    fs.create("/Downloads/movie.mp4", is_dir=False, size=150)
-    
-    # 可视化测试
-    print("\n目录结构：")
-    fs.visualize()
-    
-    # 文件分类测试
-    print("\n所有.txt文件：")
-    print(fs.list_files_by_type(".txt"))  # ['report.txt']
-    
-    # 大小统计测试
-    print("\n计算根目录大小：")
-    print(fs.calculate_size())  # 50+70+150 = 270
-    
-    # 删除操作测试
-    fs.delete("/Downloads/movie.mp4")
-    print("\n删除后的目录结构：")
-    fs.visualize()
+    // 删除节点（简化版：仅标记为无效）
+    bool deleteNode(TreeNode* parent, const string& name) {
+        if (!parent || parent->isFile) return false;
+        TreeNode* prev = nullptr;
+        TreeNode* curr = parent->left;
+        while (curr) {
+            if (curr->name == name) {
+                if (prev) {
+                    prev->right = curr->right;
+                } else {
+                    parent->left = curr->right;
+                }
+                delete curr;
+                return true;
+            }
+            prev = curr;
+            curr = curr->right;
+        }
+        cerr << "错误：未找到节点 '" << name << "'！" << endl;
+        return false;
+    }
+
+    //--- 遍历与统计 ---//
+    // 中序遍历（按文件类型分类）
+    void inOrderTraversal(TreeNode* node) {
+        if (!node) return;
+        inOrderTraversal(node->left);
+        if (!node->isFile) {
+            cout << "目录: " << node->name << endl;
+        } else {
+            string type = getFileType(node->name);
+            cout << "文件: " << node->name << " (类型: " << type << ")" << endl;
+            cache[type].push_back(node); // 缓存分类结果
+        }
+        inOrderTraversal(node->right);
+    }
+
+    // 后序遍历统计总大小
+    int postOrderSize(TreeNode* node) {
+        if (!node) return 0;
+        int leftSize = postOrderSize(node->left);
+        int rightSize = postOrderSize(node->right);
+        return node->size + leftSize + rightSize;
+    }
+
+    //--- 辅助函数 ---//
+    // 获取文件类型（根据扩展名）
+    string getFileType(const string& filename) {
+        size_t dot = filename.find_last_of(".");
+        if (dot == string::npos) return "未知";
+        return filename.substr(dot + 1);
+    }
+
+    // 打印树结构（缩进可视化）
+    void printTree(TreeNode* node, int depth = 0) {
+        if (!node) return;
+        for (int i = 0; i < depth; i++) cout << "  ";
+        cout << (node->isFile ? "📄 " : "📁 ") << node->name;
+        if (node->isFile) cout << " (" << node->size << " KB)";
+        cout << endl;
+        printTree(node->left, depth + 1);
+        printTree(node->right, depth);
+    }
+
+    //--- 接口函数 ---//
+    TreeNode* getRoot() { return root; }
+    void clearCache() { cache.clear(); }
+};
+
+// 测试用例
+int main() {
+    FileSystem fs;
+    TreeNode* root = fs.getRoot();
+
+    // 创建子目录和文件
+    TreeNode* docs = fs.createNode("Documents", false);
+    TreeNode* img = fs.createNode("Image.jpg", true, 1024);
+    TreeNode* report = fs.createNode("Report.pdf", true, 2048);
+    TreeNode* code = fs.createNode("Code.cpp", true, 512);
+
+    // 插入节点
+    fs.insertNode(root, docs);
+    fs.insertNode(root, img);
+    fs.insertNode(root, report);
+    fs.insertNode(docs, code);
+
+    // 打印目录结构
+    cout << "目录结构：" << endl;
+    fs.printTree(root);
+
+    // 中序遍历分类
+    cout << "\n文件分类结果：" << endl;
+    fs.inOrderTraversal(root);
+
+    // 后序遍历统计大小
+    cout << "\n总文件大小: " << fs.postOrderSize(root) << " KB" << endl;
+
+    // 删除文件测试
+    fs.deleteNode(root, "Image.jpg");
+    cout << "\n删除后的目录结构：" << endl;
+   fs.printTree(root);
+
+    return 0;
+}
